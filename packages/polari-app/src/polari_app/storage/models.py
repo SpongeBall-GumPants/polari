@@ -1,27 +1,38 @@
-"""Typed metadata for entries in remote storage."""
-
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
-class RemoteEntry:
-    """One file or directory in remote storage.
+class ObjectInfo:
+    """Metadata of one stored object.
 
-    ``path`` is relative to the storage root and uses ``/`` as separator,
-    without leading or trailing slash. The storage root itself has the
-    path ``""`` and the name ``""``. Paths are decoded text (``"a b.json"``),
-    never percent-encoded URL fragments (``"a%20b.json"``).
-
-    ``content_length`` and ``etag`` are ``None`` when the server did not
-    report them (servers usually omit the length for directories).
-
-    ``etag`` is an opaque server-side validator, stored exactly as the
-    server sent it (including quotes, e.g. ``'"5f3a"'``). It is not the
-    experiment revision and must not be interpreted.
+    ``size`` and ``etag`` are ``None`` when the server did not report them.
+    ``etag`` is an opaque version token, kept exactly as the server sent it
+    (including quotes, e.g. ``'"5f3a"'``). It is not a content hash; only
+    compare it for equality or pass it back as ``if_match``.
     """
 
-    path: str
-    name: str
-    is_directory: bool
-    content_length: int | None = None
-    etag: str | None = None
+    key: str
+    size: int | None
+    etag: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectData:
+    """An object's content together with the metadata it was read with."""
+
+    info: ObjectInfo
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectListing:
+    """Result of ``list_objects``. Neither tuple has a guaranteed order.
+
+    ``common_prefixes`` are the next levels below the listed prefix, each
+    ending with ``/`` (e.g. ``"2026/p01/"``). They are only filled when
+    listing with ``delimiter="/"``. A prefix can be listed here even if no
+    object is below it anymore (see ``delete_object``).
+    """
+
+    objects: tuple[ObjectInfo, ...]
+    common_prefixes: tuple[str, ...]

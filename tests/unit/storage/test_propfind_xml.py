@@ -1,7 +1,4 @@
-"""207 Multi-Status XML parsing, independent of HTTP."""
-
 import pytest
-
 from dav_helpers import dav_response, multistatus
 from polari_app.storage import InvalidResponseError
 from polari_app.storage.propfind import (

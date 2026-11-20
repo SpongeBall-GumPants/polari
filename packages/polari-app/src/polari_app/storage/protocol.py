@@ -1,39 +1,54 @@
-"""The storage interface, independent of any concrete backend."""
+from typing import Literal, Protocol
 
-from typing import Protocol
-
-from polari_app.storage.models import RemoteEntry
+from polari_app.storage.models import ObjectData, ObjectInfo, ObjectListing
 
 
-class RemoteStorage(Protocol):
-    """Asynchronous access to files below one remote root.
+class ObjectStorage(Protocol):
+    """Asynchronous key/value object storage.
 
-    All ``path`` arguments are relative to the storage root, use ``/`` as
-    separator and are plain (not percent-encoded) text. ``""`` is the root.
-    Implementations raise subclasses of
+    Keys are flat strings such as ``"2026/p01/experiment.json"``; ``/`` only
+    matters as a level separator when listing. Keys are plain text, never
+    percent-encoded. All methods raise subclasses of
     :class:`polari_app.storage.errors.StorageError`.
     """
 
-    async def list_directory(self, path: str) -> list[RemoteEntry]:
-        """Return the direct children of the directory at ``path``.
+    async def list_objects(
+        self, prefix: str = "", *, delimiter: Literal["/"] | None = "/"
+    ) -> ObjectListing:
+        """List objects whose key starts with ``prefix``.
 
-        The directory itself is not part of the result. An empty list means
-        the directory exists and is empty; a missing directory raises
-        ``NotFoundError``.
+        ``prefix`` must be ``""`` or whole levels ending with ``/``. With
+        ``delimiter="/"`` only the direct level is listed and deeper levels
+        are returned as ``common_prefixes``; with ``delimiter=None`` every
+        object below ``prefix`` is returned. A prefix without objects gives
+        an empty listing, not an error.
         """
         ...
 
-    async def get_metadata(self, path: str) -> RemoteEntry:
-        """Return metadata for the file or directory at ``path``."""
+    async def head_object(self, key: str) -> ObjectInfo:
+        """Return the metadata of the object at ``key``."""
         ...
 
-    async def read_file(self, path: str) -> bytes:
-        """Return the complete content of the (small) file at ``path``."""
+    async def get_object(self, key: str) -> ObjectData:
+        """Return the content and metadata of the object at ``key``."""
         ...
 
-    async def create_file(self, path: str, content: bytes) -> RemoteEntry:
-        """Create a new file at ``path``. Never overwrites an existing one.
+    async def put_object(
+        self,
+        key: str,
+        data: bytes,
+        *,
+        if_match: str | None = None,
+        if_none_match: bool = False,
+    ) -> ObjectInfo:
+        """Write ``data`` to ``key``. Exactly one condition must be given.
 
-        Raises ``RemoteFileExistsError`` if something already exists there.
+        ``if_none_match=True`` only creates a new object; ``if_match=etag``
+        only replaces the object if it still has that ETag. A failed
+        condition raises ``PreconditionFailedError``.
         """
+        ...
+
+    async def delete_object(self, key: str, *, if_match: str | None = None) -> None:
+        """Delete the object at ``key``, optionally only if it has ``if_match``."""
         ...

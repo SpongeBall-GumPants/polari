@@ -1,48 +1,25 @@
-"""Typed errors raised by the storage layer.
-
-Every error derives from :class:`StorageError`, so callers can catch the
-whole family at once or react to specific cases. Messages contain the HTTP
-method, the *relative* remote path and the status code, but never the full
-server URL or any credentials.
-
-Hierarchy::
-
-    StorageError
-    +-- InvalidPathError            (also a ValueError; nothing was sent)
-    +-- HTTPStatusError             (server answered with an error status)
-    |   +-- AuthenticationError     401
-    |   +-- PermissionDeniedError   403
-    |   +-- NotFoundError           404
-    |   +-- ConflictError           409
-    |   +-- PreconditionFailedError 412
-    |   |   +-- RemoteFileExistsError  (412 for create_file)
-    |   +-- UnexpectedStatusError   anything else
-    +-- InvalidResponseError        (bad XML, unexpected response shape)
-    +-- NotACollectionError         (list_directory on a file)
-    +-- FileTooLargeError           (read_file size limit exceeded)
-    +-- StorageTransportError       (no usable HTTP response)
-        +-- StorageTimeoutError
-        +-- StorageConnectionError
-        +-- OutcomeUnknownError     (write may or may not have happened)
-"""
-
-
 class StorageError(Exception):
     """Base class of all storage errors."""
 
 
-class InvalidPathError(StorageError, ValueError):
-    """A remote path is unsafe or malformed. Raised before any request."""
+class InvalidKeyError(StorageError, ValueError):
+    """An object key or prefix is unsafe or malformed. Raised before any request."""
 
 
 class HTTPStatusError(StorageError):
-    """The server answered with a status code that signals an error."""
+    """The server answered with a status code the operation does not accept.
 
-    def __init__(self, method: str, path: str, status_code: int) -> None:
+    ``key`` is the object key or prefix of the operation, never a full URL.
+    """
+
+    def __init__(
+        self, method: str, key: str, status_code: int, detail: str = ""
+    ) -> None:
         self.method = method
-        self.path = path
+        self.key = key
         self.status_code = status_code
-        super().__init__(f"{method} {path!r} failed with HTTP {status_code}")
+        message = f"{method} {key!r} failed with HTTP {status_code}"
+        super().__init__(f"{message}: {detail}" if detail else message)
 
 
 class AuthenticationError(HTTPStatusError):
@@ -54,35 +31,38 @@ class PermissionDeniedError(HTTPStatusError):
 
 
 class NotFoundError(HTTPStatusError):
-    """HTTP 404: the resource does not exist."""
+    """No object exists at the key (HTTP 404, or the key names a collection)."""
 
 
 class ConflictError(HTTPStatusError):
-    """HTTP 409: e.g. the parent directory of a new file does not exist."""
+    """HTTP 409: the key cannot be created, e.g. a parent level is an object."""
 
 
 class PreconditionFailedError(HTTPStatusError):
-    """HTTP 412: a conditional request header did not match."""
-
-
-class RemoteFileExistsError(PreconditionFailedError):
-    """``create_file`` refused because the target already exists."""
+    """HTTP 412: an ``if_match`` / ``if_none_match`` condition did not hold."""
 
 
 class UnexpectedStatusError(HTTPStatusError):
     """Any other status code that the operation does not accept."""
 
 
+class LockedError(UnexpectedStatusError):
+    """HTTP 423: the server's file lock refused the request.
+
+    Nextcloud answers this when another request holds a lock on the same
+    object, e.g. during concurrent writes. The refused request was not
+    applied. Nothing retries automatically: while a new version can keep its
+    predecessor's ETag (same-second writes), retrying an ``if_match`` write
+    can turn a refusal into a lost update.
+    """
+
+
 class InvalidResponseError(StorageError):
     """The response could not be interpreted (malformed or unexpected)."""
 
 
-class NotACollectionError(StorageError):
-    """A directory operation was used on something that is not a directory."""
-
-
-class FileTooLargeError(StorageError):
-    """A downloaded file is larger than the allowed maximum."""
+class ObjectTooLargeError(StorageError):
+    """A downloaded object is larger than the allowed maximum."""
 
 
 class StorageTransportError(StorageError):
@@ -90,16 +70,24 @@ class StorageTransportError(StorageError):
 
 
 class StorageTimeoutError(StorageTransportError):
-    """The request timed out."""
+    """The request timed out.
+
+    For ``put_object``/``delete_object`` this means the request was never
+    sent; otherwise :class:`OutcomeUnknownError` is raised.
+    """
 
 
 class StorageConnectionError(StorageTransportError):
-    """The connection failed or broke."""
+    """The connection failed or broke.
+
+    For ``put_object``/``delete_object`` this means the request was never
+    sent; otherwise :class:`OutcomeUnknownError` is raised.
+    """
 
 
 class OutcomeUnknownError(StorageTransportError):
     """A write request failed after it may have reached the server.
 
-    The remote file may or may not exist now. Check with ``get_metadata``
-    before retrying; never assume that the write failed.
+    The object may or may not have been written or deleted. Check with
+    ``head_object`` before retrying; never assume that the write failed.
     """

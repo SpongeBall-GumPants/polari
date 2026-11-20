@@ -1,68 +1,64 @@
-"""Remote storage: a small async interface and its WebDAV implementation.
+"""Asynchronous object storage with a Nextcloud implementation.
 
-This package must stay independent of the GUI (PySide6/Qt) and of the
-experiment models. It moves bytes and metadata; it does not know what an
-experiment is.
+Objects are addressed by keys such as ``"2026/p01/experiment.json"``; ``/``
+separates levels when listing. Writes are always conditional, using the
+object's ETag as an opaque version token.
 
 Typical use::
 
-    async with create_http_client(user, app_password) as client:
-        storage: RemoteStorage = WebDAVStorage(root_url, client)
-        await storage.create_file("2026/p01/experiment.json", data)
+    async with NextcloudStorage(root_url, username, app_password) as storage:
+        key = "2026/p01/experiment.json"
+        await storage.put_object(key, data, if_none_match=True)
+
+        listing = await storage.list_objects("2026/")
+        # listing.common_prefixes == ("2026/p01/",)
+
+        current = await storage.get_object(key)
+        await storage.put_object(key, new_data, if_match=current.info.etag)
 """
 
 from polari_app.storage.errors import (
     AuthenticationError,
     ConflictError,
-    FileTooLargeError,
     HTTPStatusError,
-    InvalidPathError,
+    InvalidKeyError,
     InvalidResponseError,
-    NotACollectionError,
+    LockedError,
     NotFoundError,
+    ObjectTooLargeError,
     OutcomeUnknownError,
     PermissionDeniedError,
     PreconditionFailedError,
-    RemoteFileExistsError,
     StorageConnectionError,
     StorageError,
     StorageTimeoutError,
     StorageTransportError,
     UnexpectedStatusError,
 )
-from polari_app.storage.models import RemoteEntry
-from polari_app.storage.paths import normalize_path
-from polari_app.storage.protocol import RemoteStorage
-from polari_app.storage.webdav import (
-    DEFAULT_MAX_READ_BYTES,
-    DEFAULT_TIMEOUT,
-    WebDAVStorage,
-    create_http_client,
-)
+from polari_app.storage.models import ObjectData, ObjectInfo, ObjectListing
+from polari_app.storage.nextcloud import NextcloudStorage
+from polari_app.storage.protocol import ObjectStorage
 
 __all__ = [
-    "DEFAULT_MAX_READ_BYTES",
-    "DEFAULT_TIMEOUT",
     "AuthenticationError",
     "ConflictError",
-    "FileTooLargeError",
     "HTTPStatusError",
-    "InvalidPathError",
+    "InvalidKeyError",
     "InvalidResponseError",
-    "NotACollectionError",
+    "LockedError",
+    "NextcloudStorage",
     "NotFoundError",
+    "ObjectData",
+    "ObjectInfo",
+    "ObjectListing",
+    "ObjectStorage",
+    "ObjectTooLargeError",
     "OutcomeUnknownError",
     "PermissionDeniedError",
     "PreconditionFailedError",
-    "RemoteEntry",
-    "RemoteFileExistsError",
-    "RemoteStorage",
     "StorageConnectionError",
     "StorageError",
     "StorageTimeoutError",
     "StorageTransportError",
     "UnexpectedStatusError",
-    "WebDAVStorage",
-    "create_http_client",
-    "normalize_path",
 ]

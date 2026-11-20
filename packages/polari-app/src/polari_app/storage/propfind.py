@@ -1,38 +1,29 @@
-"""WebDAV PROPFIND request body and 207 Multi-Status parsing.
-
-This module only interprets XML. It knows nothing about HTTP clients,
-storage roots or ``RemoteEntry``; the adapter in ``webdav.py`` combines
-the parsed result with path handling.
-
-ElementTree resolves namespaces to ``{namespace-uri}localname`` ("Clark
-notation"), so ``<d:href>``, ``<D:href>`` and ``<href xmlns="DAV:">`` all
-become ``{DAV:}href``. The prefix chosen by the server never matters.
-"""
-
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 from polari_app.storage.errors import InvalidResponseError
 
 _DAV = "{DAV:}"
-MULTISTATUS = f"{_DAV}multistatus"
-RESPONSE = f"{_DAV}response"
-HREF = f"{_DAV}href"
-STATUS = f"{_DAV}status"
-PROPSTAT = f"{_DAV}propstat"
-PROP = f"{_DAV}prop"
-RESOURCETYPE = f"{_DAV}resourcetype"
-COLLECTION = f"{_DAV}collection"
-GETCONTENTLENGTH = f"{_DAV}getcontentlength"
-GETETAG = f"{_DAV}getetag"
+_MULTISTATUS = f"{_DAV}multistatus"
+_RESPONSE = f"{_DAV}response"
+_HREF = f"{_DAV}href"
+_STATUS = f"{_DAV}status"
+_PROPSTAT = f"{_DAV}propstat"
+_PROP = f"{_DAV}prop"
+_RESOURCETYPE = f"{_DAV}resourcetype"
+_COLLECTION = f"{_DAV}collection"
+_GETCONTENTLENGTH = f"{_DAV}getcontentlength"
+_GETETAG = f"{_DAV}getetag"
 
+# ElementTree expands every tag to ``{namespace-uri}localname``, so the
+# prefix a server uses for the DAV: namespace never matters.
 PROPFIND_BODY = (
     b'<?xml version="1.0" encoding="utf-8"?>\n'
     b'<d:propfind xmlns:d="DAV:">'
     b"<d:prop><d:resourcetype/><d:getcontentlength/><d:getetag/></d:prop>"
     b"</d:propfind>"
 )
-"""Request only the properties ``RemoteEntry`` needs."""
+"""Request only the properties ``ObjectInfo`` needs."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +53,9 @@ def parse_multistatus(body: bytes) -> list[PropfindResource]:
         root = ET.fromstring(body)
     except ET.ParseError as exc:
         raise InvalidResponseError(f"Malformed XML: {exc}") from exc
-    if root.tag != MULTISTATUS:
+    if root.tag != _MULTISTATUS:
         raise InvalidResponseError(f"Expected DAV: multistatus, got {root.tag!r}")
-    return [_parse_response(element) for element in root.findall(RESPONSE)]
+    return [_parse_response(element) for element in root.findall(_RESPONSE)]
 
 
 def parse_status_line(text: str | None) -> int:
@@ -81,12 +72,12 @@ def parse_status_line(text: str | None) -> int:
 
 
 def _parse_response(element: ET.Element) -> PropfindResource:
-    hrefs = element.findall(HREF)
+    hrefs = element.findall(_HREF)
     if len(hrefs) != 1 or not (hrefs[0].text or "").strip():
         raise InvalidResponseError("Each response needs exactly one non-empty href")
     href = (hrefs[0].text or "").strip()
 
-    response_status = element.find(STATUS)
+    response_status = element.find(_STATUS)
     if response_status is not None:
         code = parse_status_line(response_status.text)
         raise InvalidResponseError(
@@ -94,28 +85,28 @@ def _parse_response(element: ET.Element) -> PropfindResource:
         )
 
     found: dict[str, ET.Element] = {}
-    propstats = element.findall(PROPSTAT)
+    propstats = element.findall(_PROPSTAT)
     if not propstats:
         raise InvalidResponseError(f"No propstat for {href!r}")
     for propstat in propstats:
-        code = parse_status_line(_text_of(propstat.find(STATUS)))
+        code = parse_status_line(_text_of(propstat.find(_STATUS)))
         if not 200 <= code < 300:
             continue
-        prop = propstat.find(PROP)
+        prop = propstat.find(_PROP)
         if prop is None:
             raise InvalidResponseError(f"Successful propstat without prop: {href!r}")
         for child in prop:
             found[child.tag] = child
 
-    resourcetype = found.get(RESOURCETYPE)
+    resourcetype = found.get(_RESOURCETYPE)
     if resourcetype is None:
         raise InvalidResponseError(f"No successful resourcetype for {href!r}")
 
     return PropfindResource(
         href=href,
-        is_collection=resourcetype.find(COLLECTION) is not None,
-        content_length=_content_length(found.get(GETCONTENTLENGTH), href),
-        etag=_text_of(found.get(GETETAG)).strip() or None,
+        is_collection=resourcetype.find(_COLLECTION) is not None,
+        content_length=_content_length(found.get(_GETCONTENTLENGTH), href),
+        etag=_text_of(found.get(_GETETAG)).strip() or None,
     )
 
 
